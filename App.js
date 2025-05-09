@@ -3,12 +3,16 @@ import {
   View,
   Text,
   Button,
-  ScrollView,
-  TextInput,
-  StyleSheet,
   PermissionsAndroid,
   Platform,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
+import {NavigationContainer} from '@react-navigation/native';
+import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
+import Icon from 'react-native-vector-icons/Ionicons'; // Importing icons from Ionicons
 import {
   getPairedDevices,
   connectToDevice,
@@ -16,15 +20,15 @@ import {
   listenToDevice,
 } from './src/bluetooth/BluetoothService';
 
+// Request Bluetooth permissions on Android
 const requestBluetoothPermissions = async () => {
   if (Platform.OS === 'android') {
     try {
       const granted = await PermissionsAndroid.requestMultiple([
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION, // needed on Android < 12
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION, // needed for Android < 12
       ]);
-
       console.log('Bluetooth permissions:', granted);
     } catch (err) {
       console.warn('Permission request error:', err);
@@ -32,17 +36,22 @@ const requestBluetoothPermissions = async () => {
   }
 };
 
-const App = () => {
+// Bluetooth Context and Bluetooth Management
+const BluetoothContext = React.createContext();
+
+const BluetoothProvider = ({children}) => {
   const [devices, setDevices] = useState([]);
   const [connectedDevice, setConnectedDevice] = useState(null);
   const [receivedData, setReceivedData] = useState('');
   const [messageToSend, setMessageToSend] = useState('');
+  const [isLoading, setIsLoading] = useState(true); // Add a loading state
 
   useEffect(() => {
     const initialize = async () => {
-      await requestBluetoothPermissions(); // Step 1: Ask for Bluetooth permissions
-      const pairedDevices = await getPairedDevices(); // Step 2: Fetch paired devices
+      await requestBluetoothPermissions();
+      const pairedDevices = await getPairedDevices();
       setDevices(pairedDevices);
+      setIsLoading(false); // Set loading state to false after data is fetched
     };
 
     initialize();
@@ -53,19 +62,57 @@ const App = () => {
       const unsubscribe = listenToDevice(connectedDevice, data => {
         setReceivedData(prev => prev + '\n' + data);
       });
-
       return unsubscribe;
     }
   }, [connectedDevice]);
 
   const handleConnect = async device => {
     const connected = await connectToDevice(device);
-    if (connected) setConnectedDevice(device);
+    if (connected) {
+      setConnectedDevice(device);
+    }
+  };
+
+  const handleSend = () => {
+    if (connectedDevice && messageToSend) {
+      sendData(connectedDevice, messageToSend);
+      setMessageToSend('');
+    }
   };
 
   return (
+    <BluetoothContext.Provider
+      value={{
+        devices,
+        connectedDevice,
+        receivedData,
+        messageToSend,
+        setMessageToSend,
+        handleConnect,
+        handleSend,
+        isLoading, // Provide the loading state
+      }}>
+      {children}
+    </BluetoothContext.Provider>
+  );
+};
+
+// Dashboard Screen
+const DashboardScreen = () => {
+  const {devices, connectedDevice, handleConnect, isLoading} =
+    React.useContext(BluetoothContext);
+
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color="#0000ff" />
+      </View>
+    );
+  }
+
+  return (
     <View style={styles.container}>
-      <Text style={styles.header}>Bluetooth Classic</Text>
+      <Text style={styles.header}>Dashboard</Text>
       {!connectedDevice ? (
         <ScrollView>
           {devices.map(device => (
@@ -77,7 +124,36 @@ const App = () => {
           ))}
         </ScrollView>
       ) : (
-        <View>
+        <Text>Connected to {connectedDevice.name}</Text>
+      )}
+    </View>
+  );
+};
+
+// Serial Screen
+const SerialScreen = () => {
+  const {
+    connectedDevice,
+    receivedData,
+    messageToSend,
+    setMessageToSend,
+    handleSend,
+    isLoading,
+  } = React.useContext(BluetoothContext);
+
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color="#0000ff" />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.header}>Serial Monitor</Text>
+      {connectedDevice ? (
+        <>
           <Text>Connected to {connectedDevice.name}</Text>
           <TextInput
             style={styles.input}
@@ -85,16 +161,69 @@ const App = () => {
             value={messageToSend}
             onChangeText={setMessageToSend}
           />
-          <Button
-            title="Send Data"
-            onPress={() => sendData(connectedDevice, messageToSend)}
-          />
+          <Button title="Send Data" onPress={handleSend} />
           <ScrollView style={styles.output}>
             <Text>{receivedData}</Text>
           </ScrollView>
-        </View>
+        </>
+      ) : (
+        <Text>No device connected</Text>
       )}
     </View>
+  );
+};
+
+// Profile Screen
+const ProfileScreen = () => {
+  const {connectedDevice, isLoading} = React.useContext(BluetoothContext);
+
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color="#0000ff" />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.header}>Profile</Text>
+      {connectedDevice ? (
+        <Text>Device Address: {connectedDevice.address}</Text>
+      ) : (
+        <Text>No device connected</Text>
+      )}
+    </View>
+  );
+};
+
+// Navigation Setup with Icons
+const Tab = createBottomTabNavigator();
+
+const App = () => {
+  return (
+    <BluetoothProvider>
+      <NavigationContainer>
+        <Tab.Navigator
+          screenOptions={({route}) => ({
+            tabBarIcon: ({color, size}) => {
+              let iconName;
+              if (route.name === 'Dashboard') {
+                iconName = 'ios-home'; // Dashboard icon
+              } else if (route.name === 'Serial') {
+                iconName = 'ios-tv'; // Serial icon
+              } else if (route.name === 'Profile') {
+                iconName = 'ios-person'; // Profile icon
+              }
+              return <Icon name={iconName} size={size} color={color} />;
+            },
+          })}>
+          <Tab.Screen name="Dashboard" component={DashboardScreen} />
+          <Tab.Screen name="Serial" component={SerialScreen} />
+          <Tab.Screen name="Profile" component={ProfileScreen} />
+        </Tab.Navigator>
+      </NavigationContainer>
+    </BluetoothProvider>
   );
 };
 
