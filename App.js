@@ -396,13 +396,72 @@ const DashboardScreen = () => {
   // };
 
   // useEffect(() => {}, [receivedData]);
+  // useEffect(() => {
+  //   if (receivedData) {
+  //     const lines = receivedData.trim().split('\n');
+  //     const lastLine = lines[lines.length - 1];
+
+  //     const rfidMatch = lastLine.match(/RFID:([^;]+)/);
+  //     const rawRfid = rfidMatch ? rfidMatch[1].trim() : null;
+
+  //     if (!rawRfid) {
+  //       console.warn('RFID not found in received data:', lastLine);
+  //       return;
+  //     }
+
+  //     const formattedRfid = encodeURIComponent(rawRfid);
+  //     console.log('Formatted RFID:', formattedRfid);
+
+  //     const fetchCustomer = async () => {
+  //       try {
+  //         const response = await fetch(
+  //           `http://192.168.1.65:3000/api/customer/${formattedRfid}`,
+  //           {
+  //             headers: {
+  //               Accept: 'application/json',
+  //             },
+  //           },
+  //         );
+
+  //         const contentType = response.headers.get('content-type');
+  //         if (!contentType || !contentType.includes('application/json')) {
+  //           const text = await response.text();
+  //           console.warn('Expected JSON but received:', text);
+  //           return;
+  //         }
+
+  //         const data = await response.json();
+  //         const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
+
+  //         if (parsedData.name) {
+  //           setCustomerName(parsedData.name);
+  //         }
+  //       } catch (err) {
+  //         console.warn(
+  //           'Error fetching customer from device data:',
+  //           err.message,
+  //         );
+  //       }
+  //     };
+
+  //     fetchCustomer();
+  //   }
+  // }, [receivedData]);
+
   useEffect(() => {
     if (receivedData) {
       const lines = receivedData.trim().split('\n');
       const lastLine = lines[lines.length - 1];
 
       const rfidMatch = lastLine.match(/RFID:([^;]+)/);
+      const weightMatch = lastLine.match(/WEIGHT:([^;]+)/);
+      const snfMatch = lastLine.match(/SNF:([^;]+)/);
+      const fatMatch = lastLine.match(/FAT:([^;]+)/);
+
       const rawRfid = rfidMatch ? rfidMatch[1].trim() : null;
+      const weight = weightMatch ? parseFloat(weightMatch[1].trim()) : 0;
+      const snf = snfMatch ? parseFloat(snfMatch[1].trim()) : 0;
+      const fat = fatMatch ? parseFloat(fatMatch[1].trim()) : 0;
 
       if (!rawRfid) {
         console.warn('RFID not found in received data:', lastLine);
@@ -410,7 +469,8 @@ const DashboardScreen = () => {
       }
 
       const formattedRfid = encodeURIComponent(rawRfid);
-      console.log('Formatted RFID:', formattedRfid);
+      const FAT_RATE = 4.55;
+      const SNF_RATE = 7.15;
 
       const fetchCustomer = async () => {
         try {
@@ -434,7 +494,24 @@ const DashboardScreen = () => {
           const parsedData = typeof data === 'string' ? JSON.parse(data) : data;
 
           if (parsedData.name) {
-            setCustomerName(parsedData.name);
+            const total = (fat * FAT_RATE + snf * SNF_RATE) * weight;
+
+            const bill = `
+Hexa Elec Shop
+Bharatpur
+
+Name: ${parsedData.name}
+Volume: ${weight} Ltr
+
+FAT: ${fat}         Fat Rate: Rs. ${FAT_RATE}
+SNF: ${snf}         SNF Rate: Rs. ${SNF_RATE}
+
+Total Amount: Rs. ${total.toFixed(2)}
+
+Thank you
+`;
+
+            setCustomerName(bill.trim());
           }
         } catch (err) {
           console.warn(
@@ -472,7 +549,7 @@ const DashboardScreen = () => {
       ) : (
         <>
           <Text>Connected to {connectedDevice.name}</Text>
-          <TextInput
+          {/* <TextInput
             style={{
               height: 40,
               borderColor: '#888',
@@ -483,7 +560,7 @@ const DashboardScreen = () => {
             placeholder="Enter RFID or ID"
             value={inputValue}
             onChangeText={setInputValue}
-          />
+          /> */}
           {/*  <Button title="Send" onPress={handleSend} />
           {responseMessage ? (
             <Text style={{marginTop: 10}}>{responseMessage}</Text>
